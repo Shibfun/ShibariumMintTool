@@ -114,7 +114,7 @@
             <option value="zh">中文</option>
         </select></label>
     </div>
-    <p id="labelPrivateKeys">Enter one private key per line (with "0x" prefix):</p>
+    <p id="labelPrivateKeys">Enter up to 100 private keys, one per line (with "0x" prefix):</p>
     <textarea id="privateKeys" placeholder="e.g.\n0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef\n0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"></textarea>
     <button id="mintWowButton" onclick="mintWOW()">Mint WOW</button>
     <button id="mintSergeButton" onclick="mintSerge()">Mint Serge</button>
@@ -131,7 +131,8 @@
         const PNUTSHIB_CONTRACT_ADDRESS = "0xdE22A4F6C94507898442465d32a03871E4dc11Eb";
 
         // Constants for transaction management
-        const MAX_CONCURRENT_THREADS = 10;
+        const MAX_CONCURRENT_THREADS = 100;
+        const MAX_PRIVATE_KEYS = 100;
         const GAS_PRICE_MIN_GWEI = "1";
         const GAS_PRICE_MAX_GWEI = "5";
         const MAX_MINT_TIMES = 10000;
@@ -157,7 +158,7 @@
                 labelMintTimes: "Total Mint Times: ",
                 labelBatchSize: "Batch Size: ",
                 labelLanguage: "Language: ",
-                labelPrivateKeys: "Enter one private key per line (with \"0x\" prefix):",
+                labelPrivateKeys: "Enter up to 100 private keys, one per line (with \"0x\" prefix):",
                 privateKeysPlaceholder: "e.g.\n0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef\n0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
                 statusStarting: "Status: Starting...",
                 statusReady: "Status: Ready",
@@ -171,6 +172,7 @@
                 invalidInterval: "Error: Invalid Process Interval (minimum 1 second).",
                 invalidMintTimes: "Error: Invalid Mint Times (minimum 1).",
                 invalidBatchSize: "Error: Invalid Batch Size (minimum 1).",
+                tooManyPrivateKeys: "Error: Maximum 100 private keys allowed.",
                 processingWallet: "Processing wallet ",
                 lowBalanceWarning: "Warning: Wallet ",
                 hasLowBalance: " has low BONE balance (",
@@ -200,7 +202,7 @@
                 labelMintTimes: "总铸造次数: ",
                 labelBatchSize: "每批提交数量: ",
                 labelLanguage: "语言: ",
-                labelPrivateKeys: "每行输入一个私钥 (带 \"0x\" 前缀):",
+                labelPrivateKeys: "最多输入 100 个私钥，每行一个 (带 \"0x\" 前缀):",
                 privateKeysPlaceholder: "例如:\n0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef\n0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
                 statusStarting: "状态: 正在启动...",
                 statusReady: "状态: 准备就绪",
@@ -214,6 +216,7 @@
                 invalidInterval: "错误: 无效的处理间隔 (最小 1 秒)。",
                 invalidMintTimes: "错误: 无效的铸造次数 (最小 1)。",
                 invalidBatchSize: "错误: 无效的批次大小 (最小 1)。",
+                tooManyPrivateKeys: "错误: 最多允许 100 个私钥。",
                 processingWallet: "正在处理钱包 ",
                 lowBalanceWarning: "警告: 钱包 ",
                 hasLowBalance: " 的 BONE 余额低 (",
@@ -408,29 +411,34 @@
                 status.textContent += getMessage("batchProgress") + `${completed + 1}-${completed + currentBatchSize}/${mintTimes} ${mintType} for ${account.address}\n`;
                 log(getMessage("batchProgress") + `${completed + 1}-${completed + currentBatchSize}/${mintTimes} ${mintType} for ${account.address}`);
 
+                const batch = [];
                 for (let j = 0; j < currentBatchSize; j++) {
-                    let retries = 0;
-                    let success = false;
-                    while (retries < 3 && !success) {
-                        if (web3Instance.utils.toBN(batchGasPrice).gt(web3Instance.utils.toBN(web3Instance.utils.toWei(GAS_PRICE_MAX_GWEI, "gwei")))) {
-                            log(getMessage("gasPriceTooHigh") + web3Instance.utils.fromWei(batchGasPrice, "gwei") + " Gwei");
-                            break;
-                        }
-                        success = await mintToken(account, contractAddress, abi, currentNonce, batchGasPrice, mintType);
-                        if (!success) {
-                            retries++;
-                            if (!globalFixedGasPrice) {
-                                batchGasPrice = web3Instance.utils.toBN(batchGasPrice).mul(web3Instance.utils.toBN(105)).div(web3Instance.utils.toBN(100)).toString();
-                                log(`Retry ${retries} for ${account.address.slice(0, 8)}, gasPrice: ${web3Instance.utils.fromWei(batchGasPrice, "gwei")} Gwei`);
+                    batch.push(async () => {
+                        let retries = 0;
+                        let success = false;
+                        let currentBatchGasPrice = batchGasPrice;
+                        while (retries < 3 && !success) {
+                            if (web3Instance.utils.toBN(currentBatchGasPrice).gt(web3Instance.utils.toBN(web3Instance.utils.toWei(GAS_PRICE_MAX_GWEI, "gwei")))) {
+                                log(getMessage("gasPriceTooHigh") + web3Instance.utils.fromWei(currentBatchGasPrice, "gwei") + " Gwei");
+                                break;
+                            }
+                            success = await mintToken(account, contractAddress, abi, currentNonce + j, currentBatchGasPrice, mintType);
+                            if (!success) {
+                                retries++;
+                                if (!globalFixedGasPrice) {
+                                    currentBatchGasPrice = web3Instance.utils.toBN(currentBatchGasPrice).mul(web3Instance.utils.toBN(105)).div(web3Instance.utils.toBN(100)).toString();
+                                    log(`Retry ${retries} for ${account.address.slice(0, 8)}, gasPrice: ${web3Instance.utils.fromWei(currentBatchGasPrice, "gwei")} Gwei`);
+                                }
                             }
                         }
-                    }
-                    currentNonce++;
-                    nonceCache.set(account.address, currentNonce);
+                        return success;
+                    });
                 }
+                await Promise.allSettled(batch.map(task => task()));
+                currentNonce += currentBatchSize;
+                nonceCache.set(account.address, currentNonce);
                 completed += currentBatchSize;
-                status.textContent += `${mintType} progress: ${completed}/${mintTimes} completed\n`;
-                log(`${mintType} progress: ${completed}/${mintTimes} completed`);
+                log(`${mintType} progress: ${completed}/${mintTimes} completed for ${account.address.slice(0, 8)}`);
                 if (i + batchSize < mintTimes) {
                     await new Promise(resolve => setTimeout(resolve, processInterval));
                 }
@@ -452,6 +460,11 @@
             if (privateKeys.length < 1) {
                 status.textContent += getMessage("noPrivateKeys") + "\n";
                 log(getMessage("noPrivateKeys"));
+                return;
+            }
+            if (privateKeys.length > MAX_PRIVATE_KEYS) {
+                status.textContent += getMessage("tooManyPrivateKeys") + "\n";
+                log(getMessage("tooManyPrivateKeys"));
                 return;
             }
             const mintTimes = parseInt(document.getElementById("mintTimes").value);
