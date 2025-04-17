@@ -307,20 +307,20 @@
             }
         }
 
-        async function updateGasPrice() {
-            try {
-                const gasPrice = await web3Instance.eth.getGasPrice();
-                let fastGasPrice = web3Instance.utils.toBN(gasPrice).mul(web3Instance.utils.toBN(115)).div(web3Instance.utils.toBN(100));
-                fastGasPrice = web3Instance.utils.toBN(Math.max(web3Instance.utils.toWei(GAS_PRICE_MIN_GWEI, "gwei"), Math.min(fastGasPrice, web3Instance.utils.toWei(GAS_PRICE_MAX_GWEI, "gwei"))));
-                currentGasPrice = fastGasPrice.toString();
-                document.getElementById("currentGasPrice").textContent = web3Instance.utils.fromWei(currentGasPrice, "gwei");
-                log(getMessage("gasPriceUpdate") + web3Instance.utils.fromWei(currentGasPrice, "gwei") + " Gwei");
-            } catch (error) {
-                currentGasPrice = web3Instance.utils.toWei("2", "gwei");
-                document.getElementById("currentGasPrice").textContent = "2 (Fallback)";
-                log(getMessage("gasPriceFailed") + error.message);
-            }
-        }
+async function updateGasPrice() {
+    try {
+        const gasPrice = await web3Instance.eth.getGasPrice();
+        let fastGasPrice = web3Instance.utils.toBN(gasPrice);
+        fastGasPrice = web3Instance.utils.toBN(Math.max(web3Instance.utils.toWei(GAS_PRICE_MIN_GWEI, "gwei"), Math.min(fastGasPrice, web3Instance.utils.toWei(GAS_PRICE_MAX_GWEI, "gwei"))));
+        currentGasPrice = fastGasPrice.toString();
+        document.getElementById("currentGasPrice").textContent = web3Instance.utils.fromWei(currentGasPrice, "gwei");
+        log(getMessage("gasPriceUpdate") + web3Instance.utils.fromWei(currentGasPrice, "gwei") + " Gwei");
+    } catch (error) {
+        currentGasPrice = web3Instance.utils.toWei("2", "gwei");
+        document.getElementById("currentGasPrice").textContent = "2 (Fallback)";
+        log(getMessage("gasPriceFailed") + error.message);
+    }
+}
 
         async function getNextNonce(address) {
             try {
