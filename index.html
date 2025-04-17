@@ -105,10 +105,10 @@
     <h1 id="title">Shibarium Mint Tool</h1>
     <div class="settings">
         <label id="labelRpcUrl">Shibarium RPC URL: <input type="text" id="rpcUrl" value="https://www.shibrpc.com"></label>
-        <label id="labelGasLimit">Gas Limit: <input type="number" id="gasLimit" value="21000" min="21000"></label>
+        <label id="labelGasLimit">Gas Limit: <input type="number" id="gasLimit" value="300000" min="21000"></label>
         <label id="labelProcessInterval">Process Interval (seconds): <input type="number" id="processInterval" value="5" min="1"></label>
-        <label id="labelMintTimes">Total Mint Times: <input type="number" id="mintTimes" value="100" min="1"></label>
-        <label id="labelBatchSize">Batch Size: <input type="number" id="batchSize" value="10" min="1"></label>
+        <label id="labelMintTimes">Total Mint Times: <input type="number" id="mintTimes" value="1000" min="1"></label>
+        <label id="labelBatchSize">Batch Size: <input type="number" id="batchSize" value="50" min="1"></label>
         <label id="labelLanguage">Language: <select id="language" onchange="updateLanguage()">
             <option value="en">English</option>
             <option value="zh">中文</option>
@@ -119,6 +119,7 @@
     <button id="mintWowButton" onclick="mintWOW()">Mint WOW</button>
     <button id="mintSergeButton" onclick="mintSerge()">Mint Serge</button>
     <button id="mintPnutshibButton" onclick="mintPNUTSHIB()">Mint PNUTSHIB</button>
+    <button id="mintToysButton" onclick="mintToys()">Mint TOYS</button>
     <div id="status">Status: Ready</div>
     <div id="log"></div>
     <div id="gasPriceInfo">Current Gas Price: <span id="currentGasPrice">N/A</span> Gwei (Range: 1-5 Gwei)</div>
@@ -128,15 +129,29 @@
         const WOW_CONTRACT_ADDRESS = "0x8f4b11d923BbAA6206f3Dd3ff84e8e31bafB49b7";
         const SERGE_CONTRACT_ADDRESS = "0x9FcEa3627746aEA84c8Eba612E1fD25aC27d605A";
         const PNUTSHIB_CONTRACT_ADDRESS = "0xdE22A4F6C94507898442465d32a03871E4dc11Eb";
-        const MINT_DATA = "0x1249c58b";
-        const MAX_MINT_TIMES = 10000;
-        const MAX_LOG_ENTRIES = 1000;
+        const TOYS_CONTRACT_ADDRESS = "0xB820c8a74c8E4059661460C414821bC5820470D8";
+        const TARGET_TX_PER_BLOCK = 500;
+        const MAX_TX_PER_ADDRESS = 100;
+        const BLOCK_TIME = 5000;
+        let MAX_CONCURRENT_TX = 50;
         const GAS_PRICE_MIN_GWEI = "1";
         const GAS_PRICE_MAX_GWEI = "5";
+        const MAX_MINT_TIMES = 10000;
+        const MAX_LOG_ENTRIES = 1000;
         let web3Instance = null;
         let currentGasPrice = null;
+        let globalFixedGasPrice = null;
         const nonceCache = new Map();
         let logQueue = [];
+        const activeAddresses = new Map();
+        const taskCounts = {};
+        let txCounter = 0;
+        let lastBlockTime = Date.now();
+
+        const WOW_ABI = [{"inputs":[],"name":"mint","outputs":[],"stateMutability":"nonpayable","type":"function"}];
+        const SERGE_ABI = [{"inputs":[],"name":"mint","outputs":[],"stateMutability":"nonpayable","type":"function"}];
+        const PNUTSHIB_ABI = [{"inputs":[],"name":"mint","outputs":[],"stateMutability":"nonpayable","type":"function"}];
+        const TOYS_ABI = [{"inputs":[],"name":"mint","outputs":[],"stateMutability":"nonpayable","type":"function"}];
 
         const messages = {
             en: {
@@ -177,7 +192,11 @@
                 batchProgress: "Batch progress: ",
                 gasPriceTooHigh: "Gas price too high: ",
                 gasPriceUpdate: "Updated gasPrice: ",
-                gasPriceFailed: "Failed to update gasPrice: "
+                gasPriceFailed: "Failed to update gasPrice: ",
+                fixedGasPrice: "Fixed global gasPrice at ",
+                resetGasPrice: "No active tasks, resetting globalFixedGasPrice",
+                tasksCompleted: "Address tasks completed",
+                totalTasks: "Total tasks: "
             },
             zh: {
                 title: "Shibarium 铸造工具",
@@ -217,7 +236,11 @@
                 batchProgress: "批次进度: ",
                 gasPriceTooHigh: "Gas 价格过高: ",
                 gasPriceUpdate: "更新 Gas 价格: ",
-                gasPriceFailed: "无法更新 Gas 价格: "
+                gasPriceFailed: "无法更新 Gas 价格: ",
+                fixedGasPrice: "固定全局 Gas 价格为 ",
+                resetGasPrice: "无活跃任务，重置全局 Gas 价格",
+                tasksCompleted: "地址任务完成",
+                totalTasks: "总任务数: "
             }
         };
 
@@ -238,6 +261,7 @@
             document.getElementById("mintWowButton").textContent = getMessage("minting") + "WOW";
             document.getElementById("mintSergeButton").textContent = getMessage("minting") + "Serge";
             document.getElementById("mintPnutshibButton").textContent = getMessage("minting") + "PNUTSHIB";
+            document.getElementById("mintToysButton").textContent = getMessage("minting") + "TOYS";
             document.getElementById("status").textContent = getMessage("statusReady");
         }
 
@@ -283,20 +307,20 @@
             }
         }
 
-        async function updateGasPrice() {
-            try {
-                const gasPrice = await web3Instance.eth.getGasPrice();
-                let fastGasPrice = web3Instance.utils.toBN(gasPrice);
-                fastGasPrice = web3Instance.utils.toBN(Math.max(web3Instance.utils.toWei(GAS_PRICE_MIN_GWEI, "gwei"), Math.min(fastGasPrice, web3Instance.utils.toWei(GAS_PRICE_MAX_GWEI, "gwei"))));
-                currentGasPrice = fastGasPrice.toString();
-                document.getElementById("currentGasPrice").textContent = web3Instance.utils.fromWei(currentGasPrice, "gwei");
-                log(getMessage("gasPriceUpdate") + web3Instance.utils.fromWei(currentGasPrice, "gwei") + " Gwei");
-            } catch (error) {
-                currentGasPrice = web3Instance.utils.toWei("2", "gwei");
-                document.getElementById("currentGasPrice").textContent = "2 (Fallback)";
-                log(getMessage("gasPriceFailed") + error.message);
-            }
-        }
+async function updateGasPrice() {
+    try {
+        const gasPrice = await web3Instance.eth.getGasPrice();
+        let fastGasPrice = web3Instance.utils.toBN(gasPrice);
+        fastGasPrice = web3Instance.utils.toBN(Math.max(web3Instance.utils.toWei(GAS_PRICE_MIN_GWEI, "gwei"), Math.min(fastGasPrice, web3Instance.utils.toWei(GAS_PRICE_MAX_GWEI, "gwei"))));
+        currentGasPrice = fastGasPrice.toString();
+        document.getElementById("currentGasPrice").textContent = web3Instance.utils.fromWei(currentGasPrice, "gwei");
+        log(getMessage("gasPriceUpdate") + web3Instance.utils.fromWei(currentGasPrice, "gwei") + " Gwei");
+    } catch (error) {
+        currentGasPrice = web3Instance.utils.toWei("2", "gwei");
+        document.getElementById("currentGasPrice").textContent = "2 (Fallback)";
+        log(getMessage("gasPriceFailed") + error.message);
+    }
+}
 
         async function getNextNonce(address) {
             try {
@@ -321,38 +345,120 @@
             }
         }
 
-        async function sendMintTransaction(account, contractAddress, mintType, nonce, gasPrice, index, total) {
-            web3Instance.eth.accounts.wallet.add(account);
+        async function mintToken(address, contractAddress, abi, nonce, batchGasPrice, mintType) {
+            web3Instance.eth.accounts.wallet.add(address);
+            const contract = new web3Instance.eth.Contract(abi, contractAddress);
             const gasLimit = parseInt(document.getElementById("gasLimit").value);
-            const balance = await web3Instance.eth.getBalance(account.address);
+            const balance = await web3Instance.eth.getBalance(address.address);
             if (web3Instance.utils.fromWei(balance, "ether") < 0.01) {
-                log(getMessage("lowBalanceWarning") + account.address);
+                log(getMessage("lowBalanceWarning") + address.address);
                 return false;
             }
-            log(getMessage("minting") + mintType + getMessage("for") + account.address.slice(0, 8) + ` (${index}/${total}), nonce: ${nonce}, gasPrice: ${web3Instance.utils.fromWei(gasPrice, "gwei")} Gwei`);
+            log(getMessage("minting") + mintType + getMessage("for") + address.address.slice(0, 8) + `, nonce: ${nonce}, gasPrice: ${web3Instance.utils.fromWei(batchGasPrice, "gwei")} Gwei`);
             try {
-                const tx = await web3Instance.eth.sendTransaction({
-                    from: account.address,
-                    to: contractAddress,
-                    value: "0",
-                    data: MINT_DATA,
-                    gas: gasLimit,
-                    gasPrice,
+                const tx = await contract.methods.mint().send({
+                    from: address.address,
+                    gas: mintType === "TOYS" ? 6500000 : gasLimit,
+                    gasPrice: batchGasPrice,
                     nonce
                 });
+                if (!globalFixedGasPrice) {
+                    globalFixedGasPrice = batchGasPrice;
+                    log(getMessage("fixedGasPrice") + web3Instance.utils.fromWei(batchGasPrice, "gwei") + " Gwei");
+                }
                 log(getMessage("mintSuccess") + tx.transactionHash);
                 return true;
             } catch (error) {
-                log(`${mintType} mint failed for ${account.address.slice(0, 8)}, nonce: ${nonce}, error: ${error.message}`);
+                log(`${mintType} mint failed for ${address.address.slice(0, 8)}, nonce: ${nonce}, error: ${error.message}`);
                 if (error.message.includes("nonce too low") || error.message.includes("already known")) {
-                    log(getMessage("nonceTooLow") + account.address.slice(0, 8));
-                    nonceCache.delete(account.address);
+                    log(getMessage("nonceTooLow") + address.address.slice(0, 8));
+                    nonceCache.delete(address.address);
                 }
                 return false;
             }
         }
 
-        async function mint(contractAddress, mintType) {
+        async function processQueues() {
+            if (activeAddresses.size === 0) {
+                if (globalFixedGasPrice) {
+                    log(getMessage("resetGasPrice"));
+                    globalFixedGasPrice = null;
+                }
+                return;
+            }
+            const now = Date.now();
+            let currentBatch = [];
+            if (now - lastBlockTime >= BLOCK_TIME) {
+                log(`Last 5s: ${txCounter} transactions sent`);
+                txCounter = 0;
+                lastBlockTime = now;
+            }
+            let totalTasks = 0;
+            for (const [address, state] of activeAddresses) {
+                taskCounts[address] = state.tasks.length;
+                totalTasks += state.tasks.length;
+            }
+            log(getMessage("totalTasks") + totalTasks + `, Active addresses: ${activeAddresses.size}`);
+            const txPerSecond = TARGET_TX_PER_BLOCK / (BLOCK_TIME / 1000);
+            for (const [address, state] of activeAddresses) {
+                const proportion = totalTasks > 0 ? taskCounts[address] / totalTasks : 1 / activeAddresses.size;
+                const txQuota = Math.min(Math.floor(proportion * txPerSecond), MAX_TX_PER_ADDRESS, state.tasks.length);
+                const batchSize = Math.min(txQuota, MAX_CONCURRENT_TX);
+                log(`Processing ${batchSize} tasks for ${address.slice(0, 8)}, quota: ${txQuota}`);
+                currentBatch.push(...state.tasks.splice(0, batchSize));
+            }
+            if (currentBatch.length > 0) {
+                log(`Processing batch of ${currentBatch.length} tasks`);
+                let batchGasPrice = globalFixedGasPrice || currentGasPrice || await web3Instance.eth.getGasPrice();
+                const promises = currentBatch.map(async task => {
+                    let result;
+                    let retries = 0;
+                    let currentBatchGasPrice = batchGasPrice;
+                    while (retries < 3) {
+                        if (web3Instance.utils.toBN(currentBatchGasPrice).gt(web3Instance.utils.toBN(web3Instance.utils.toWei(GAS_PRICE_MAX_GWEI, "gwei")))) {
+                            log(getMessage("gasPriceTooHigh") + web3Instance.utils.fromWei(currentBatchGasPrice, "gwei") + " Gwei");
+                            return { status: "rejected", reason: "Gas price too high" };
+                        }
+                        result = await mintToken(
+                            task.account,
+                            task.contractAddress,
+                            task.abi,
+                            task.nonce,
+                            currentBatchGasPrice,
+                            task.mintType
+                        );
+                        if (result) break;
+                        retries++;
+                        if (!globalFixedGasPrice) {
+                            currentBatchGasPrice = web3Instance.utils.toBN(currentBatchGasPrice).mul(web3Instance.utils.toBN(105)).div(web3Instance.utils.toBN(100)).toString();
+                            log(`Retry ${retries} for ${task.account.address.slice(0, 8)}, gasPrice: ${web3Instance.utils.fromWei(currentBatchGasPrice, "gwei")} Gwei`);
+                        }
+                    }
+                    txCounter += result ? 1 : 0;
+                    return result ? { status: "fulfilled" } : { status: "rejected", reason: "Mint failed" };
+                });
+                await Promise.allSettled(promises);
+            }
+            if (txCounter < TARGET_TX_PER_BLOCK * 0.8 && currentBatch.length > 0) {
+                MAX_CONCURRENT_TX = Math.min(MAX_CONCURRENT_TX + 10, 100);
+                log(`Increased MAX_CONCURRENT_TX to ${MAX_CONCURRENT_TX}`);
+            } else if (txCounter > TARGET_TX_PER_BLOCK) {
+                MAX_CONCURRENT_TX = Math.max(MAX_CONCURRENT_TX - 10, 20);
+                log(`Decreased MAX_CONCURRENT_TX to ${MAX_CONCURRENT_TX}`);
+            }
+            for (const [address, state] of activeAddresses) {
+                if (state.tasks.length === 0) {
+                    activeAddresses.delete(address);
+                    log(getMessage("tasksCompleted") + address.slice(0, 8));
+                    delete taskCounts[address];
+                }
+            }
+            if (activeAddresses.size > 0) {
+                setTimeout(processQueues, 1000);
+            }
+        }
+
+        async function queueMint(contractAddress, abi, mintType) {
             const status = document.getElementById("status");
             status.textContent = getMessage("statusStarting") + "\n";
             if (!web3Instance) {
@@ -367,20 +473,9 @@
                 log(getMessage("noPrivateKeys"));
                 return;
             }
-            const gasLimit = parseInt(document.getElementById("gasLimit").value);
-            const processInterval = parseInt(document.getElementById("processInterval").value) * 1000;
             const mintTimes = parseInt(document.getElementById("mintTimes").value);
             const batchSize = parseInt(document.getElementById("batchSize").value);
-            if (isNaN(gasLimit) || gasLimit < 21000) {
-                status.textContent += getMessage("invalidGasLimit") + "\n";
-                log(getMessage("invalidGasLimit"));
-                return;
-            }
-            if (isNaN(processInterval) || processInterval < 1000) {
-                status.textContent += getMessage("invalidInterval") + "\n";
-                log(getMessage("invalidInterval"));
-                return;
-            }
+            const processInterval = parseInt(document.getElementById("processInterval").value) * 1000;
             if (isNaN(mintTimes) || mintTimes <= 0 || mintTimes > MAX_MINT_TIMES) {
                 status.textContent += getMessage("invalidMintTimes") + "\n";
                 log(getMessage("invalidMintTimes"));
@@ -389,6 +484,11 @@
             if (isNaN(batchSize) || batchSize < 1) {
                 status.textContent += getMessage("invalidBatchSize") + "\n";
                 log(getMessage("invalidBatchSize"));
+                return;
+            }
+            if (isNaN(processInterval) || processInterval < 1000) {
+                status.textContent += getMessage("invalidInterval") + "\n";
+                log(getMessage("invalidInterval"));
                 return;
             }
             try {
@@ -402,36 +502,29 @@
                         const currentBatchSize = Math.min(batchSize, mintTimes - i);
                         const batch = [];
                         for (let j = 0; j < currentBatchSize; j++) {
-                            batch.push({ nonce: currentNonce + j, index: completed + j + 1 });
+                            batch.push({
+                                account,
+                                contractAddress,
+                                abi,
+                                mintType,
+                                nonce: currentNonce + j,
+                                total: mintTimes,
+                                completed
+                            });
                         }
                         currentNonce += currentBatchSize;
                         nonceCache.set(account.address, currentNonce);
                         status.textContent += getMessage("batchProgress") + `${completed + 1}-${completed + currentBatchSize}/${mintTimes} ${mintType} for ${account.address}\n`;
                         log(getMessage("batchProgress") + `${completed + 1}-${completed + currentBatchSize}/${mintTimes} ${mintType} for ${account.address}`);
-                        const promises = batch.map(async task => {
-                            let retries = 0;
-                            const maxRetries = 3;
-                            let batchGasPrice = currentGasPrice || await web3Instance.eth.getGasPrice();
-                            while (retries < maxRetries) {
-                                if (web3Instance.utils.toBN(batchGasPrice).gt(web3Instance.utils.toWei(GAS_PRICE_MAX_GWEI, "gwei"))) {
-                                    log(getMessage("gasPriceTooHigh") + web3Instance.utils.fromWei(batchGasPrice, "gwei") + " Gwei");
-                                    return { status: "rejected", reason: "Gas price too high" };
-                                }
-                                try {
-                                    const result = await sendMintTransaction(account, contractAddress, mintType, task.nonce, batchGasPrice, task.index, mintTimes);
-                                    if (result) return { status: "fulfilled" };
-                                    retries++;
-                                    batchGasPrice = web3Instance.utils.toBN(batchGasPrice).mul(web3Instance.utils.toBN(105)).div(web3Instance.utils.toBN(100)).toString();
-                                    log(`Retry ${retries} for ${account.address.slice(0, 8)}, gasPrice: ${web3Instance.utils.fromWei(batchGasPrice, "gwei")} Gwei`);
-                                } catch (error) {
-                                    log(getMessage("errorProcessing") + account.address + getMessage("errorMessage") + error.message);
-                                    return { status: "rejected", reason: error.message };
-                                }
-                            }
-                            return { status: "rejected", reason: "Max retries reached" };
-                        });
-                        await Promise.allSettled(promises);
+                        for (const task of batch) {
+                            const state = activeAddresses.get(account.address) || { tasks: [] };
+                            state.tasks.push(task);
+                            activeAddresses.set(account.address, state);
+                            log(`Task added for ${account.address.slice(0, 8)}, active addresses: ${activeAddresses.size}`);
+                        }
                         completed += currentBatchSize;
+                        status.textContent += `${mintType} progress: ${completed}/${mintTimes} completed\n`;
+                        log(`${mintType} progress: ${completed}/${mintTimes} completed`);
                         if (i + batchSize < mintTimes) {
                             await new Promise(resolve => setTimeout(resolve, processInterval));
                         }
@@ -439,6 +532,7 @@
                 }
                 status.textContent += getMessage("allProcessed") + "\n";
                 log(getMessage("allProcessed"));
+                setTimeout(processQueues, 0);
             } catch (error) {
                 status.textContent += getMessage("generalError") + error.message + "\n";
                 log(getMessage("generalError") + error.message);
@@ -446,15 +540,19 @@
         }
 
         async function mintWOW() {
-            await mint(WOW_CONTRACT_ADDRESS, "WOW");
+            await queueMint(WOW_CONTRACT_ADDRESS, WOW_ABI, "WOW");
         }
 
         async function mintSerge() {
-            await mint(SERGE_CONTRACT_ADDRESS, "Serge");
+            await queueMint(SERGE_CONTRACT_ADDRESS, SERGE_ABI, "Serge");
         }
 
         async function mintPNUTSHIB() {
-            await mint(PNUTSHIB_CONTRACT_ADDRESS, "PNUTSHIB");
+            await queueMint(PNUTSHIB_CONTRACT_ADDRESS, PNUTSHIB_ABI, "PNUTSHIB");
+        }
+
+        async function mintToys() {
+            await queueMint(TOYS_CONTRACT_ADDRESS, TOYS_ABI, "TOYS");
         }
 
         document.addEventListener("DOMContentLoaded", () => {
