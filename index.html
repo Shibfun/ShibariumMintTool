@@ -5,16 +5,95 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title id="title">Shibarium Mint Tool</title>
     <style>
-        body { font-family: Arial, sans-serif; margin: 20px; background: linear-gradient(135deg, #2c3e50, #34495e); color: #fff; }
-        h1 { text-align: center; color: #F4A261; }
-        textarea { width: 100%; height: 200px; margin-bottom: 10px; background: #34495E; color: #fff; border-radius: 8px; padding: 10px; }
-        button { padding: 10px 20px; background-color: #F4A261; color: white; border: none; cursor: pointer; margin: 5px; border-radius: 8px; transition: background 0.3s, transform 0.2s; }
-        button:hover { background-color: #E07A5F; transform: translateY(-2px); }
-        #status { margin-top: 10px; white-space: pre-wrap; color: #A8B5D4; }
-        .settings { margin: 20px 0; background: rgba(44, 62, 80, 0.9); padding: 15px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3); }
-        .settings label { display: block; margin-bottom: 10px; color: #fff; }
-        .settings input { width: 100%; max-width: 300px; padding: 8px; border-radius: 8px; border: none; background: #34495E; color: #fff; }
-        #log { height: 200px; overflow-y: scroll; border: 1px solid #ccc; padding: 10px; background: rgba(44, 62, 80, 0.9); margin-top: 10px; border-radius: 8px; color: #fff; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 20px;
+            background: #ffffff;
+            color: #333;
+            line-height: 1.6;
+        }
+        h1 {
+            text-align: center;
+            color: #007bff;
+            font-size: 2rem;
+            margin-bottom: 20px;
+        }
+        textarea {
+            width: 100%;
+            height: 150px;
+            margin-bottom: 15px;
+            background: #f5f5f5;
+            color: #333;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 12px;
+            font-size: 1rem;
+            resize: vertical;
+        }
+        button {
+            padding: 12px 24px;
+            background-color: #007bff;
+            color: #fff;
+            border: none;
+            cursor: pointer;
+            border-radius: 8px;
+            font-size: 1rem;
+            transition: background 0.3s, transform 0.2s;
+            margin: 5px;
+        }
+        button:hover {
+            background-color: #0056b3;
+            transform: translateY(-2px);
+        }
+        #status {
+            margin-top: 15px;
+            white-space: pre-wrap;
+            color: #555;
+            font-size: 0.9rem;
+        }
+        .settings {
+            margin: 20px 0;
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+        .settings label {
+            display: block;
+            margin-bottom: 12px;
+            color: #333;
+            font-size: 1rem;
+        }
+        .settings input, .settings select {
+            width: 100%;
+            max-width: 280px;
+            padding: 10px;
+            border-radius: 8px;
+            border: 1px solid #ddd;
+            background: #fff;
+            color: #333;
+            font-size: 1rem;
+        }
+        #log {
+            height: 200px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            padding: 12px;
+            background: #f5f5f5;
+            margin-top: 15px;
+            border-radius: 8px;
+            color: #333;
+            font-size: 0.9rem;
+        }
+        @media (max-width: 600px) {
+            body { margin: 10px; }
+            h1 { font-size: 1.5rem; }
+            textarea { height: 120px; font-size: 0.9rem; }
+            button { padding: 10px 16px; font-size: 0.9rem; width: 100%; margin: 5px 0; }
+            .settings { padding: 15px; }
+            .settings input, .settings select { max-width: 100%; font-size: 0.9rem; }
+            #log { height: 150px; font-size: 0.8rem; }
+        }
     </style>
 </head>
 <body onload="updateLanguage()">
@@ -32,7 +111,8 @@
         <label id="labelGasPrice">Gas 价格 (Gwei): <input type="number" id="gasPrice" value="3.2" step="0.1" min="0"></label>
         <label id="labelGasLimit">Gas 限制: <input type="number" id="gasLimit" value="300000" min="21000"></label>
         <label id="labelProcessInterval">处理间隔 (秒): <input type="number" id="processInterval" value="5" min="1"></label>
-        <label id="labelMintTimes">铸造次数: <input type="number" id="mintTimes" value="1" min="1" max="100"></label>
+        <label id="labelMintTimes">总铸造次数: <input type="number" id="mintTimes" value="100" min="1"></label>
+        <label id="labelBatchSize">每批提交数量: <input type="number" id="batchSize" value="10" min="1"></label>
     </div>
     <p id="labelPrivateKeys">每行输入一个私钥 (带 "0x" 前缀):</p>
     <textarea id="privateKeys" placeholder="例如:\n0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef\n0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"></textarea>
@@ -51,8 +131,8 @@
         const PNUTSHIB_CONTRACT_ADDRESS = "0xdE22A4F6C94507898442465d32a03871E4dc11Eb";
         const TOYS_CONTRACT_ADDRESS = "0xB820c8a74c8E4059661460C414821bC5820470D8";
         const BOOM_CONTRACT_ADDRESS = "0x493e6084f9373baF1D9BC85f82c2748a2459083b";
-        const MAX_MINT_TIMES = 100;
         const MAX_LOG_ENTRIES = 1000;
+        const nonceCache = new Map();
         let logQueue = [];
 
         const WOW_ABI = [{"inputs":[],"name":"mint","outputs":[],"stateMutability":"nonpayable","type":"function"}];
@@ -79,7 +159,8 @@
                 labelGasPrice: "Gas Price (Gwei): ",
                 labelGasLimit: "Gas Limit: ",
                 labelProcessInterval: "Process Interval (seconds): ",
-                labelMintTimes: "Mint Times: ",
+                labelMintTimes: "Total Mint Times: ",
+                labelBatchSize: "Batch Size: ",
                 statusStarting: "Status: Starting...",
                 statusReady: "Status: Ready",
                 testingRPC: "Testing RPC connection...",
@@ -91,7 +172,8 @@
                 invalidGasPrice: "Error: Invalid Gas Price.",
                 invalidGasLimit: "Error: Invalid Gas Limit (minimum 21000).",
                 invalidInterval: "Error: Invalid Process Interval (minimum 1 second).",
-                invalidMintTimes: "Error: Invalid Mint Times (1-100).",
+                invalidMintTimes: "Error: Invalid Mint Times (minimum 1).",
+                invalidBatchSize: "Error: Invalid Batch Size (minimum 1).",
                 processingWallet: "Processing wallet ",
                 lowBalanceWarning: "Warning: Wallet ",
                 hasLowBalance: " has low BONE balance (",
@@ -105,7 +187,9 @@
                 generalError: "Error: ",
                 notWhitelisted: "Error: Address not whitelisted for BOOM minting: ",
                 tooSoonToMint: "Error: Too soon to mint BOOM again, wait for next period: ",
-                transactionFailed: "Transaction failed with hash: "
+                transactionFailed: "Transaction failed with hash: ",
+                nonceTooLow: "Nonce too low, retrying: ",
+                batchProgress: "Batch progress: "
             },
             zh: {
                 title: "Shibarium 铸造工具",
@@ -120,7 +204,8 @@
                 labelGasPrice: "Gas 价格 (Gwei): ",
                 labelGasLimit: "Gas 限制: ",
                 labelProcessInterval: "处理间隔 (秒): ",
-                labelMintTimes: "铸造次数: ",
+                labelMintTimes: "总铸造次数: ",
+                labelBatchSize: "每批提交数量: ",
                 statusStarting: "状态: 正在启动...",
                 statusReady: "状态: 准备就绪",
                 testingRPC: "测试 RPC 连接...",
@@ -132,7 +217,8 @@
                 invalidGasPrice: "错误: 无效的 Gas 价格。",
                 invalidGasLimit: "错误: 无效的 Gas 限制 (最小 21000)。",
                 invalidInterval: "错误: 无效的处理间隔 (最小 1 秒)。",
-                invalidMintTimes: "错误: 无效的铸造次数 (1-100)。",
+                invalidMintTimes: "错误: 无效的铸造次数 (最小 1)。",
+                invalidBatchSize: "错误: 无效的批次大小 (最小 1)。",
                 processingWallet: "正在处理钱包 ",
                 lowBalanceWarning: "警告: 钱包 ",
                 hasLowBalance: " 的 BONE 余额低 (",
@@ -146,7 +232,9 @@
                 generalError: "错误: ",
                 notWhitelisted: "错误: 地址未在 BOOM 铸造白名单中: ",
                 tooSoonToMint: "错误: BOOM 铸造间隔未到，请等待下一周期: ",
-                transactionFailed: "交易失败，哈希: "
+                transactionFailed: "交易失败，哈希: ",
+                nonceTooLow: "Nonce 过低，重试: ",
+                batchProgress: "批次进度: "
             }
         };
 
@@ -168,6 +256,7 @@
             document.getElementById("labelGasLimit").childNodes[0].textContent = getMessage("labelGasLimit");
             document.getElementById("labelProcessInterval").childNodes[0].textContent = getMessage("labelProcessInterval");
             document.getElementById("labelMintTimes").childNodes[0].textContent = getMessage("labelMintTimes");
+            document.getElementById("labelBatchSize").childNodes[0].textContent = getMessage("labelBatchSize");
             document.getElementById("mintWowButton").textContent = getMessage("minting") + "WOW";
             document.getElementById("mintSergeButton").textContent = getMessage("minting") + "Serge";
             document.getElementById("mintPnutshibButton").textContent = getMessage("minting") + "PNUTSHIB";
@@ -214,6 +303,28 @@
             }
         }
 
+        async function getNextNonce(web3, address) {
+            try {
+                let networkNonce = await web3.eth.getTransactionCount(address, "pending");
+                let cachedNonce = nonceCache.get(address) || networkNonce;
+                let nextNonce = Math.max(networkNonce, cachedNonce);
+                for (let i = 0; i < 5; i++) {
+                    try {
+                        const tx = await web3.eth.getTransactionByNonce(address, nextNonce);
+                        if (tx) nextNonce++;
+                        else break;
+                    } catch {
+                        break;
+                    }
+                }
+                nonceCache.set(address, nextNonce + 1);
+                return nextNonce;
+            } catch (error) {
+                log(getMessage("errorProcessing") + address + getMessage("errorMessage") + error.message);
+                return nonceCache.get(address) || 0;
+            }
+        }
+
         async function processMint(contractAddress, abi, mintType, isBoom = false) {
             const status = document.getElementById("status");
             status.textContent = getMessage("statusStarting") + "\n";
@@ -223,26 +334,37 @@
             const privateKeys = document.getElementById("privateKeys").value.trim().split("\n").filter(key => key.length > 0);
             if (privateKeys.length < 1) {
                 status.textContent += getMessage("noPrivateKeys") + "\n";
+                log(getMessage("noPrivateKeys"));
                 return;
             }
             const gasPriceGwei = parseFloat(document.getElementById("gasPrice").value);
             const gasLimit = parseInt(document.getElementById("gasLimit").value);
             const processInterval = parseInt(document.getElementById("processInterval").value) * 1000;
             const mintTimes = parseInt(document.getElementById("mintTimes").value);
+            const batchSize = parseInt(document.getElementById("batchSize").value);
             if (isNaN(gasPriceGwei) || gasPriceGwei <= 0) {
                 status.textContent += getMessage("invalidGasPrice") + "\n";
+                log(getMessage("invalidGasPrice"));
                 return;
             }
             if (isNaN(gasLimit) || gasLimit < 21000) {
                 status.textContent += getMessage("invalidGasLimit") + "\n";
+                log(getMessage("invalidGasLimit"));
                 return;
             }
             if (isNaN(processInterval) || processInterval < 1000) {
                 status.textContent += getMessage("invalidInterval") + "\n";
+                log(getMessage("invalidInterval"));
                 return;
             }
-            if (isNaN(mintTimes) || mintTimes < 1 || mintTimes > MAX_MINT_TIMES) {
+            if (isNaN(mintTimes) || mintTimes < 1) {
                 status.textContent += getMessage("invalidMintTimes") + "\n";
+                log(getMessage("invalidMintTimes"));
+                return;
+            }
+            if (isNaN(batchSize) || batchSize < 1) {
+                status.textContent += getMessage("invalidBatchSize") + "\n";
+                log(getMessage("invalidBatchSize"));
                 return;
             }
             const gasPriceWei = web3.utils.toWei(gasPriceGwei.toString(), "gwei");
@@ -274,27 +396,52 @@
                             continue;
                         }
                     }
-                    for (let i = 0; i < mintTimes; i++) {
-                        status.textContent += getMessage("minting") + mintType + getMessage("for") + account.address + "...\n";
-                        log(getMessage("minting") + mintType + getMessage("for") + account.address);
-                        try {
-                            const nonce = await web3.eth.getTransactionCount(account.address, "pending");
-                            const tx = await contract.methods.mint().send({
-                                from: account.address,
-                                gas: mintType === "TOYS" ? 6500000 : gasLimit,
-                                gasPrice: gasPriceWei,
-                                nonce
-                            });
-                            status.textContent += getMessage("mintSuccess") + tx.transactionHash + "\n";
-                            log(getMessage("mintSuccess") + tx.transactionHash);
-                        } catch (error) {
-                            status.textContent += getMessage("errorProcessing") + account.address + getMessage("errorMessage") + error.message + "\n";
-                            log(getMessage("errorProcessing") + account.address + getMessage("errorMessage") + error.message);
-                            if (error.receipt && error.receipt.transactionHash) {
-                                status.textContent += getMessage("transactionFailed") + error.receipt.transactionHash + "\n";
-                                log(getMessage("transactionFailed") + error.receipt.transactionHash);
-                            }
+                    let completed = 0;
+                    for (let i = 0; i < mintTimes; i += batchSize) {
+                        const currentBatchSize = Math.min(batchSize, mintTimes - i);
+                        status.textContent += getMessage("batchProgress") + `${completed + 1}-${completed + currentBatchSize}/${mintTimes} ${mintType} for ${account.address}\n`;
+                        log(getMessage("batchProgress") + `${completed + 1}-${completed + currentBatchSize}/${mintTimes} ${mintType} for ${account.address}`);
+                        const batchPromises = [];
+                        let nonce = await getNextNonce(web3, account.address);
+                        for (let j = 0; j < currentBatchSize; j++) {
+                            batchPromises.push((async () => {
+                                let retries = 0;
+                                const maxRetries = 3;
+                                while (retries < maxRetries) {
+                                    try {
+                                        status.textContent += getMessage("minting") + mintType + getMessage("for") + account.address + ` (${completed + j + 1}/${mintTimes})...\n`;
+                                        log(getMessage("minting") + mintType + getMessage("for") + account.address + ` (${completed + j + 1}/${mintTimes})`);
+                                        const tx = await contract.methods.mint().send({
+                                            from: account.address,
+                                            gas: mintType === "TOYS" ? 6500000 : gasLimit,
+                                            gasPrice: gasPriceWei,
+                                            nonce
+                                        });
+                                        status.textContent += getMessage("mintSuccess") + tx.transactionHash + "\n";
+                                        log(getMessage("mintSuccess") + tx.transactionHash);
+                                        nonce++;
+                                        nonceCache.set(account.address, nonce);
+                                        return;
+                                    } catch (error) {
+                                        if (error.message.includes("nonce too low")) {
+                                            log(getMessage("nonceTooLow") + account.address);
+                                            nonce = await getNextNonce(web3, account.address);
+                                            retries++;
+                                            continue;
+                                        }
+                                        status.textContent += getMessage("errorProcessing") + account.address + getMessage("errorMessage") + error.message + "\n";
+                                        log(getMessage("errorProcessing") + account.address + getMessage("errorMessage") + error.message);
+                                        if (error.receipt && error.receipt.transactionHash) {
+                                            status.textContent += getMessage("transactionFailed") + error.receipt.transactionHash + "\n";
+                                            log(getMessage("transactionFailed") + error.receipt.transactionHash);
+                                        }
+                                        return;
+                                    }
+                                }
+                            })());
                         }
+                        await Promise.all(batchPromises);
+                        completed += currentBatchSize;
                         await new Promise(resolve => setTimeout(resolve, processInterval));
                     }
                 }
